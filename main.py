@@ -76,6 +76,15 @@ def _load_app():
     _dictation.start()
     _set_tray_status(f"Ready — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
 
+    # Auto-enable startup on first launch (when running as exe)
+    import sys
+    if getattr(sys, 'frozen', False) and not _is_startup_enabled():
+        try:
+            _enable_startup()
+            _rebuild_menu()
+        except Exception:
+            pass
+
 
 # --------------------------------------------------------------------------- #
 #  Status helpers                                                              #
@@ -134,6 +143,18 @@ def _apply_settings(new_cfg: dict):
     _set_tray_status(f"Settings saved — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
 
 
+def _startup_exe_path() -> str:
+    """Return the command to register for startup."""
+    import sys
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller exe — register the exe directly
+        return f'"{sys.executable}"'
+    else:
+        # Running as a script — use the VBS launcher
+        vbs = r"C:\Users\prakh\AI Experiments\freewispr\launch.vbs"
+        return f'wscript.exe "{vbs}"'
+
+
 def _is_startup_enabled() -> bool:
     import winreg
     try:
@@ -146,9 +167,17 @@ def _is_startup_enabled() -> bool:
         return False
 
 
+def _enable_startup():
+    import winreg
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                         r"Software\Microsoft\Windows\CurrentVersion\Run",
+                         0, winreg.KEY_SET_VALUE)
+    winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, _startup_exe_path())
+    winreg.CloseKey(key)
+
+
 def _toggle_startup(_=None):
     import winreg
-    vbs = r"C:\Users\prakh\AI Experiments\freewispr\launch.vbs"
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                          r"Software\Microsoft\Windows\CurrentVersion\Run",
                          0, winreg.KEY_SET_VALUE)
@@ -156,7 +185,7 @@ def _toggle_startup(_=None):
         winreg.DeleteValue(key, "freewispr")
         _set_tray_status("Removed from startup")
     else:
-        winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, f'wscript.exe "{vbs}"')
+        winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, _startup_exe_path())
         _set_tray_status("Will start with Windows ✓")
     winreg.CloseKey(key)
     _rebuild_menu()
