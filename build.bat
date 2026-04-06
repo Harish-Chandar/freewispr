@@ -1,21 +1,32 @@
 @echo off
+setlocal
+set PYTHON=C:\Users\prakh\AppData\Local\Python\pythoncore-3.14-64\python.exe
+
 echo === freewispr build ===
 echo.
 
-REM Install deps
-pip install -r requirements.txt
-pip install pyinstaller
+echo Generating icon...
+"%PYTHON%" make_icon.py
 
 echo.
 echo Building exe...
-pyinstaller ^
+"%PYTHON%" -m PyInstaller ^
   --onefile ^
   --windowed ^
   --name freewispr ^
-  --icon assets/icon.ico ^
-  --add-data "assets;assets" ^
+  --icon "assets/icon.ico" ^
+  --hidden-import=faster_whisper ^
+  --hidden-import=sounddevice ^
+  --hidden-import=keyboard ^
+  --hidden-import=pystray._win32 ^
+  --hidden-import=psutil ^
+  --hidden-import=openai ^
   main.py
 
 echo.
-echo Done! Exe is in dist\freewispr.exe
+if exist dist\freewispr.exe (
+    echo Build successful! dist\freewispr.exe is ready.
+) else (
+    echo Build FAILED. Check errors above.
+)
 pause

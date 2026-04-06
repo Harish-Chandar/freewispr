@@ -55,11 +55,27 @@ class MeetingRecorder:
     """
     Continuously records mic + system audio (WASAPI loopback), mixing both.
     Falls back to mic-only if loopback is unavailable.
-    Emits mixed chunks every `chunk_sec` seconds via self.chunks queue.
+
+    Emits chunks via self.chunks queue in two cases:
+      1. Max chunk duration reached (chunk_sec, default 20 s).
+      2. Natural speech boundary: after at least min_chunk_sec of audio,
+         a silence of silence_sec is detected (energy < silence_threshold).
+         This produces more accurate transcription by avoiding mid-sentence cuts.
     """
 
-    def __init__(self, chunk_sec: int = 20):
+    def __init__(
+        self,
+        chunk_sec: int = 20,
+        min_chunk_sec: int = 5,
+        silence_sec: float = 1.5,
+        silence_threshold: float = 0.005,
+    ):
         self.chunk_samples = int(chunk_sec * SAMPLE_RATE)
+        self._min_chunk = int(min_chunk_sec * SAMPLE_RATE)
+        self._silence_trigger = int(silence_sec * SAMPLE_RATE)
+        self._silence_thresh = silence_threshold
+        self._silence_frames = 0
+
         self._mic_buf: list = []
         self._sys_buf: list = []
         self._mic_len: int = 0
@@ -76,6 +92,7 @@ class MeetingRecorder:
         self._mic_buf = []
         self._sys_buf = []
         self._mic_len = 0
+        self._silence_frames = 0
         self.recording = True
         self.has_system_audio = False
 
@@ -139,8 +156,23 @@ class MeetingRecorder:
             return
         self._mic_buf.append(indata.copy())
         self._mic_len += frames
+
+        # 1. Hard limit: always emit at max chunk size
         if self._mic_len >= self.chunk_samples:
+            self._silence_frames = 0
             self._emit_chunk()
+            return
+
+        # 2. Soft limit: emit at natural silence boundary (VAD-like)
+        if self._mic_len >= self._min_chunk:
+            energy = float(np.abs(indata).mean())
+            if energy < self._silence_thresh:
+                self._silence_frames += frames
+                if self._silence_frames >= self._silence_trigger:
+                    self._silence_frames = 0
+                    self._emit_chunk()
+            else:
+                self._silence_frames = 0
 
     def _sys_cb(self, indata, frames, time, status):
         if not self.recording:

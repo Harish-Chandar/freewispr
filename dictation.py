@@ -10,18 +10,20 @@ MIN_AUDIO_SAMPLES = 3200  # 0.2 s at 16 kHz — ignore accidental taps
 
 
 class DictationMode:
-    def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space", on_status=None):
+    def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
+                 on_status=None, indicator=None):
         self.transcriber = transcriber
         self.hotkey = hotkey
         self.recorder = MicRecorder()
         self.on_status = on_status or (lambda msg: None)
+        self.indicator = indicator   # FloatingIndicator instance (optional)
         self._active = False
         self._recording = False
 
         # Parse combo vs single key
         if "+" in self.hotkey:
             parts = self.hotkey.split("+")
-            self._trigger_key = parts[-1]      # e.g. "space"
+            self._trigger_key = parts[-1]          # e.g. "space"
             self._modifier = "+".join(parts[:-1])  # e.g. "ctrl"
         else:
             self._trigger_key = self.hotkey
@@ -54,6 +56,8 @@ class DictationMode:
             self._recording = True
             self.recorder.start()
             self.on_status("Listening…")
+            if self.indicator:
+                self.indicator.show("Listening…", state="listen")
 
     def _on_release(self, _):
         if self._active and self._recording:
@@ -61,8 +65,12 @@ class DictationMode:
             audio = self.recorder.stop()
             if len(audio) < MIN_AUDIO_SAMPLES:
                 self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+                if self.indicator:
+                    self.indicator.hide(delay_ms=0)
                 return
             self.on_status("Transcribing…")
+            if self.indicator:
+                self.indicator.show("Transcribing…", state="transcribe")
             threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
 
     def _transcribe(self, audio: np.ndarray):
@@ -72,5 +80,10 @@ class DictationMode:
         if text.strip():
             paste_text(text)
             self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
+            if self.indicator:
+                self.indicator.show("Pasted ✓", state="done")
+                self.indicator.hide(delay_ms=1200)
         else:
             self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
+            if self.indicator:
+                self.indicator.hide(delay_ms=0)

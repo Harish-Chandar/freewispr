@@ -3,6 +3,7 @@ freewispr — Windows speech-to-text
 Entry point: system tray icon + dictation/meeting modes.
 """
 import sys
+import time
 import threading
 import tkinter as tk
 
@@ -13,7 +14,7 @@ import config as cfg_module
 from transcriber import Transcriber
 from dictation import DictationMode
 from meeting import MeetingMode
-from ui import MeetingWindow, SettingsWindow, _style, BG
+from ui import MeetingWindow, SettingsWindow, FloatingIndicator, _style, BG
 
 # --------------------------------------------------------------------------- #
 #  Globals                                                                     #
@@ -27,6 +28,7 @@ _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
 _meeting_win: MeetingWindow | None = None
 _status_var: tk.StringVar | None = None
+_indicator: FloatingIndicator | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -58,23 +60,29 @@ def _load_app():
 
     _config = cfg_module.load()
 
-    model_size = _config.get("model_size", "tiny")
+    model_size = _config.get("model_size", "base")
     print(f"Loading Whisper '{model_size}' model...", flush=True)
     _set_tray_status("Loading model…")
     _transcriber = Transcriber(
         model_size=model_size,
         language=_config.get("language", "en"),
+        filter_fillers=_config.get("filter_fillers", False),
     )
     print("Model loaded! App is ready.", flush=True)
 
     _meeting = MeetingMode(_transcriber)
     _dictation = DictationMode(
         _transcriber,
-        hotkey=_config.get("hotkey", "right ctrl"),
+        hotkey=_config.get("hotkey", "ctrl+space"),
         on_status=_set_tray_status,
+        indicator=_indicator,
     )
     _dictation.start()
-    _set_tray_status(f"Ready — hold {_config.get('hotkey','right ctrl').upper()} to speak")
+    _set_tray_status(f"Ready — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
+
+    # Start meeting app watcher
+    if _config.get("auto_detect_meetings", True):
+        threading.Thread(target=_meeting_watcher, daemon=True).start()
 
 
 # --------------------------------------------------------------------------- #
@@ -84,9 +92,60 @@ def _load_app():
 def _set_tray_status(msg: str):
     if _tray_icon:
         _tray_icon.title = f"freewispr — {msg}"
-    # Also update status bar in any open window
     if _status_var and _tk_root:
         _tk_root.after(0, lambda: _status_var.set(msg))
+
+
+# --------------------------------------------------------------------------- #
+#  Meeting app auto-detection                                                  #
+# --------------------------------------------------------------------------- #
+
+_MEETING_PROCS = {
+    "zoom": "Zoom",
+    "teams": "Microsoft Teams",
+    "webex": "Webex",
+    "slack": "Slack",
+    "skype": "Skype",
+    "googlemeet": "Google Meet",
+    "meet": "Google Meet",
+}
+
+
+def _detect_meeting_app() -> str | None:
+    try:
+        import psutil
+        for proc in psutil.process_iter(["name"]):
+            name = proc.info["name"].lower()
+            for key, display in _MEETING_PROCS.items():
+                if key in name:
+                    return display
+    except Exception:
+        pass
+    return None
+
+
+def _meeting_watcher():
+    """Periodically check for meeting apps and notify via tray balloon."""
+    notified_for: str | None = None
+    while True:
+        time.sleep(30)
+        # Don't notify if already recording
+        if _meeting and _meeting._active:
+            notified_for = None
+            continue
+        app = _detect_meeting_app()
+        if app and app != notified_for:
+            notified_for = app
+            if _tray_icon:
+                try:
+                    _tray_icon.notify(
+                        f"{app} detected — open Meeting Transcription to record.",
+                        "freewispr",
+                    )
+                except Exception:
+                    pass  # notify() may not be available on all setups
+        elif not app:
+            notified_for = None
 
 
 # --------------------------------------------------------------------------- #
@@ -107,7 +166,7 @@ def _show_meeting():
             return
         except tk.TclError:
             _meeting_win = None
-    _meeting_win = MeetingWindow(_meeting, on_close=lambda: None)
+    _meeting_win = MeetingWindow(_meeting, config=_config, on_close=lambda: None)
 
 
 def _open_settings(_=None):
@@ -120,20 +179,25 @@ def _show_settings():
 
 
 def _apply_settings(new_cfg: dict):
-    global _config, _dictation
+    global _config, _dictation, _transcriber
     _config.update(new_cfg)
     cfg_module.save(_config)
+
+    # Rebuild transcriber if filler setting changed
+    if _transcriber:
+        _transcriber.filter_fillers = _config.get("filter_fillers", False)
 
     # Restart dictation with new hotkey
     if _dictation:
         _dictation.stop()
     _dictation = DictationMode(
         _transcriber,
-        hotkey=_config.get("hotkey", "right ctrl"),
+        hotkey=_config.get("hotkey", "ctrl+space"),
         on_status=_set_tray_status,
+        indicator=_indicator,
     )
     _dictation.start()
-    _set_tray_status(f"Settings saved — hold {_config.get('hotkey','right ctrl').upper()} to speak")
+    _set_tray_status(f"Settings saved — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
 
 
 def _is_startup_enabled() -> bool:
@@ -161,7 +225,6 @@ def _toggle_startup(_=None):
         winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, f'wscript.exe "{vbs}"')
         _set_tray_status("Will start with Windows ✓")
     winreg.CloseKey(key)
-    # Rebuild menu to reflect new state
     _rebuild_menu()
 
 
@@ -197,7 +260,7 @@ def _quit(_=None):
 # --------------------------------------------------------------------------- #
 
 def main():
-    global _tray_icon, _tk_root, _status_var
+    global _tray_icon, _tk_root, _status_var, _indicator
 
     # Hidden tk root — keeps tkinter event loop running for Toplevel windows
     _tk_root = tk.Tk()
@@ -205,6 +268,7 @@ def main():
     _style(_tk_root)
 
     _status_var = tk.StringVar(value="Starting…")
+    _indicator = FloatingIndicator(_tk_root)
 
     # Build tray icon
     menu = _build_menu()
@@ -222,7 +286,7 @@ def main():
     tray_thread = threading.Thread(target=_tray_icon.run, daemon=True)
     tray_thread.start()
 
-    # tkinter main loop (needed for Toplevel windows)
+    # tkinter main loop (needed for Toplevel windows + FloatingIndicator)
     _tk_root.mainloop()
 
 

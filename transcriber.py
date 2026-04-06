@@ -1,20 +1,39 @@
+import re
 from pathlib import Path
 import numpy as np
 from faster_whisper import WhisperModel
 
 MODEL_DIR = Path.home() / ".freewispr" / "models"
 
+# Common filler words / phrases to strip when filter_fillers=True
+_FILLERS = re.compile(
+    r'\b(um+|uh+|er+|ah+|hmm+|mhm|you know|i mean|'
+    r'so um|so uh|well uh|basically|literally|right\?|okay so|'
+    r'kind of|sort of)\b[,.]?',
+    re.IGNORECASE,
+)
+
 
 class Transcriber:
-    def __init__(self, model_size: str = "tiny", language: str = "en"):
+    def __init__(self, model_size: str = "base", language: str = "en",
+                 filter_fillers: bool = False):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
+        self.filter_fillers = filter_fillers
         self.model = WhisperModel(
             model_size,
             device="cpu",
             compute_type="int8",       # fastest on CPU
             download_root=str(MODEL_DIR),
         )
+
+    def _clean(self, text: str) -> str:
+        """Strip filler words and normalise whitespace if enabled."""
+        if not self.filter_fillers:
+            return text.strip()
+        cleaned = _FILLERS.sub("", text)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        return cleaned.strip(" ,.")
 
     def transcribe(self, audio: np.ndarray) -> str:
         """Quick transcription — for dictation mode."""
@@ -25,7 +44,7 @@ class Transcriber:
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 300},
         )
-        return " ".join(s.text.strip() for s in segments)
+        return self._clean(" ".join(s.text.strip() for s in segments))
 
     def transcribe_segments(self, audio: np.ndarray, time_offset: float = 0.0):
         """Returns list of (start, end, text) tuples — for meeting mode."""
@@ -38,5 +57,7 @@ class Transcriber:
         )
         result = []
         for s in segments:
-            result.append((s.start + time_offset, s.end + time_offset, s.text.strip()))
+            text = self._clean(s.text.strip())
+            if text:
+                result.append((s.start + time_offset, s.end + time_offset, text))
         return result
