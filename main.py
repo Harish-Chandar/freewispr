@@ -107,12 +107,43 @@ _MEETING_PROCS = {
     "webex": "Webex",
     "slack": "Slack",
     "skype": "Skype",
-    "googlemeet": "Google Meet",
-    "meet": "Google Meet",
 }
+
+# Browser window title fragments that indicate an active meeting
+_MEETING_TITLES = [
+    ("meet.google.com", "Google Meet"),
+    ("google meet",     "Google Meet"),
+    ("microsoft teams", "Microsoft Teams"),
+    ("zoom meeting",    "Zoom"),
+    ("webex",           "Webex"),
+]
+
+
+def _get_window_titles() -> list[str]:
+    """Return titles of all visible top-level windows via Win32 API."""
+    import ctypes
+    import ctypes.wintypes
+    titles: list[str] = []
+
+    def _cb(hwnd, _):
+        if ctypes.windll.user32.IsWindowVisible(hwnd):
+            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+                titles.append(buf.value)
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(
+        ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+    )
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_cb), 0)
+    return titles
 
 
 def _detect_meeting_app() -> str | None:
+    """Return name of detected meeting app, or None."""
+    # 1. Check running processes (desktop apps: Zoom, Teams, Webex…)
     try:
         import psutil
         for proc in psutil.process_iter(["name"]):
@@ -122,31 +153,45 @@ def _detect_meeting_app() -> str | None:
                     return display
     except Exception:
         pass
+
+    # 2. Check browser window titles (Google Meet, Teams web, etc.)
+    try:
+        for title in _get_window_titles():
+            tl = title.lower()
+            for fragment, display in _MEETING_TITLES:
+                if fragment in tl:
+                    return display
+    except Exception:
+        pass
+
     return None
 
 
 def _meeting_watcher():
-    """Periodically check for meeting apps and notify via tray balloon."""
-    notified_for: str | None = None
+    """
+    Periodically check for meeting apps.
+    When detected, auto-open the Meeting Transcription window (without starting
+    recording — the user clicks Start when ready).
+    """
+    opened_for: str | None = None
     while True:
-        time.sleep(30)
-        # Don't notify if already recording
+        time.sleep(15)  # check every 15 s (faster than before for browser tabs)
+        # Reset when recording ends
         if _meeting and _meeting._active:
-            notified_for = None
+            opened_for = None
             continue
+        # Reset when meeting window is closed
+        if _meeting_win is None:
+            opened_for = None
         app = _detect_meeting_app()
-        if app and app != notified_for:
-            notified_for = app
-            if _tray_icon:
-                try:
-                    _tray_icon.notify(
-                        f"{app} detected — open Meeting Transcription to record.",
-                        "freewispr",
-                    )
-                except Exception:
-                    pass  # notify() may not be available on all setups
+        if app and app != opened_for:
+            opened_for = app
+            # Auto-open the Meeting Transcription window
+            if _tk_root:
+                _tk_root.after(0, _show_meeting)
+            _set_tray_status(f"{app} detected — Meeting window opened")
         elif not app:
-            notified_for = None
+            opened_for = None
 
 
 # --------------------------------------------------------------------------- #
