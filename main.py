@@ -11,10 +11,11 @@ from PIL import Image, ImageDraw
 import pystray
 
 import config as cfg_module
+import db
 from transcriber import Transcriber
 from dictation import DictationMode
 from meeting import MeetingMode
-from ui import MeetingWindow, SettingsWindow, FloatingIndicator, _style, BG
+from ui import MeetingWindow, SettingsWindow, HistoryWindow, FloatingIndicator, _style, BG
 
 # --------------------------------------------------------------------------- #
 #  Globals                                                                     #
@@ -152,6 +153,11 @@ def _meeting_watcher():
 #  Tray menu callbacks                                                         #
 # --------------------------------------------------------------------------- #
 
+def _open_history(_=None):
+    if _tk_root:
+        _tk_root.after(0, lambda: HistoryWindow())
+
+
 def _open_meeting(_=None):
     global _meeting_win
     if _tk_root:
@@ -237,6 +243,7 @@ def _build_menu():
     startup_label = "✓ Start with Windows" if _is_startup_enabled() else "Start with Windows"
     return pystray.Menu(
         pystray.MenuItem("Meeting Transcription", _open_meeting),
+        pystray.MenuItem("Meeting History", _open_history),
         pystray.MenuItem("Settings", _open_settings),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,
@@ -269,6 +276,9 @@ def main():
 
     _status_var = tk.StringVar(value="Starting…")
     _indicator = FloatingIndicator(_tk_root)
+
+    # Initialise database (creates tables if first run)
+    db.init()
 
     # Build tray icon
     menu = _build_menu()

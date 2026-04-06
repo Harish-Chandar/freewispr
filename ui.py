@@ -2,6 +2,7 @@
 Tkinter-based windows for freewispr.
 - FloatingIndicator : small always-on-top pill (recording / transcribing state)
 - MeetingWindow     : transcript view + start/stop + AI summary
+- HistoryWindow     : browse, search, and replay past meeting transcripts
 - SettingsWindow    : hotkey, model, language, API key, filler filter
 """
 import threading
@@ -10,6 +11,8 @@ from tkinter import ttk, scrolledtext, messagebox, filedialog
 from pathlib import Path
 import subprocess
 import sys
+
+import db
 
 
 BG = "#0f0f0f"
@@ -280,6 +283,7 @@ class MeetingWindow:
             )
             summary = resp.choices[0].message.content
             self.root.after(0, self._show_summary, summary)
+            self._save_summary_to_db(summary)  # persist to DB
         except ImportError:
             self.root.after(0, lambda: messagebox.showerror(
                 "freewispr", "Install openai package:\n  pip install openai"
@@ -292,6 +296,14 @@ class MeetingWindow:
             self.root.after(0, lambda: self._summary_btn.configure(
                 state="normal", text="AI Summary"
             ))
+
+    def _save_summary_to_db(self, summary: str):
+        mid = self.meeting.meeting_id
+        if mid is not None:
+            try:
+                db.save_summary(mid, summary)
+            except Exception:
+                pass
 
     def _show_summary(self, summary: str):
         win = tk.Toplevel(self.root)
@@ -333,6 +345,186 @@ class MeetingWindow:
 
 # --------------------------------------------------------------------------- #
 #  Settings window                                                             #
+# --------------------------------------------------------------------------- #
+#  History window                                                              #
+# --------------------------------------------------------------------------- #
+
+class HistoryWindow:
+    """Browse, search and replay past meeting transcripts stored in SQLite."""
+
+    def __init__(self):
+        self.root = tk.Toplevel()
+        self.root.title("freewispr — Meeting History")
+        self.root.geometry("820x580")
+        self.root.configure(bg=BG)
+        _style(self.root)
+        self._meetings: list[dict] = []
+        self._selected_id: int | None = None
+        self._build()
+        self._load_meetings()
+
+    def _build(self):
+        # ── Left panel: list + search ──────────────────────────────────────
+        left = tk.Frame(self.root, bg=BG, width=280)
+        left.pack(side="left", fill="y", padx=(12, 0), pady=12)
+        left.pack_propagate(False)
+
+        # Search
+        search_row = tk.Frame(left, bg=BG)
+        search_row.pack(fill="x", pady=(0, 8))
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._on_search())
+        ttk.Entry(search_row, textvariable=self._search_var,
+                  width=28).pack(side="left", fill="x", expand=True)
+        ttk.Button(search_row, text="✕", width=2,
+                   command=self._clear_search).pack(side="left", padx=(4, 0))
+
+        # Meeting list
+        self._listbox = tk.Listbox(
+            left, bg=BG2, fg=FG, font=("Segoe UI", 9),
+            selectbackground=ACC, selectforeground=FG,
+            relief="flat", borderwidth=0, activestyle="none",
+            highlightthickness=0,
+        )
+        self._listbox.pack(fill="both", expand=True)
+        self._listbox.bind("<<ListboxSelect>>", self._on_select)
+
+        sb = ttk.Scrollbar(left, orient="vertical", command=self._listbox.yview)
+        self._listbox.configure(yscrollcommand=sb.set)
+
+        ttk.Button(left, text="Delete Selected", command=self._delete).pack(
+            fill="x", pady=(8, 0)
+        )
+
+        # ── Right panel: transcript view ───────────────────────────────────
+        right = tk.Frame(self.root, bg=BG)
+        right.pack(side="left", fill="both", expand=True, padx=12, pady=12)
+
+        # Meta row
+        self._meta_var = tk.StringVar(value="Select a meeting to view its transcript")
+        ttk.Label(right, textvariable=self._meta_var,
+                  style="Sub.TLabel").pack(anchor="w", pady=(0, 6))
+
+        self._transcript = scrolledtext.ScrolledText(
+            right, bg=BG2, fg=FG, font=FONT_MONO,
+            relief="flat", borderwidth=0, wrap="word",
+            insertbackground=FG,
+        )
+        self._transcript.pack(fill="both", expand=True)
+        self._transcript.configure(state="disabled")
+
+        # Button row
+        btn_row = ttk.Frame(right)
+        btn_row.pack(fill="x", pady=(8, 0))
+        ttk.Button(btn_row, text="Export .txt", command=self._export).pack(side="left", padx=(0, 8))
+        self._summary_lbl = ttk.Label(btn_row, text="", style="Sub.TLabel")
+        self._summary_lbl.pack(side="left")
+
+    # ------------------------------------------------------------------ data
+
+    def _load_meetings(self, meetings: list[dict] | None = None):
+        if meetings is None:
+            meetings = db.get_meetings()
+        self._meetings = meetings
+        self._listbox.delete(0, "end")
+        for m in meetings:
+            label = db.fmt_date(m["started_at"])
+            dur = db.fmt_duration(m["duration_sec"])
+            self._listbox.insert("end", f"  {label}  ({dur})")
+
+    def _on_search(self):
+        q = self._search_var.get().strip()
+        if not q:
+            self._load_meetings()
+            return
+        try:
+            results = db.search(q)
+        except Exception:
+            return
+        # Group unique meetings that matched
+        seen: dict[int, dict] = {}
+        for r in results:
+            mid = r["meeting_id"]
+            if mid not in seen:
+                seen[mid] = {"id": mid, "started_at": r["started_at"],
+                             "duration_sec": None, "preview": r["text"],
+                             "has_system_audio": 0, "summary": None}
+        self._load_meetings(list(seen.values()))
+
+    def _clear_search(self):
+        self._search_var.set("")
+
+    def _on_select(self, _=None):
+        sel = self._listbox.curselection()
+        if not sel:
+            return
+        m = self._meetings[sel[0]]
+        self._selected_id = m["id"]
+        self._show_transcript(m)
+
+    def _show_transcript(self, meeting: dict):
+        segs = db.get_segments(meeting["id"])
+        self._transcript.configure(state="normal")
+        self._transcript.delete("1.0", "end")
+
+        if segs:
+            for s in segs:
+                from meeting import _fmt
+                ts = _fmt(s["start_sec"])
+                self._transcript.insert("end", f"[{ts}] {s['text']}\n")
+        else:
+            self._transcript.insert("end", "(No segments recorded)")
+
+        self._transcript.configure(state="disabled")
+        self._transcript.see("1.0")
+
+        # Meta
+        date = db.fmt_date(meeting["started_at"])
+        dur = db.fmt_duration(meeting["duration_sec"])
+        audio = "mic + system" if meeting.get("has_system_audio") else "mic only"
+        self._meta_var.set(f"{date}  ·  {dur}  ·  {audio}")
+
+        # Summary badge
+        if meeting.get("summary"):
+            self._summary_lbl.configure(text="AI summary saved ✓")
+        else:
+            self._summary_lbl.configure(text="")
+
+    def _export(self):
+        if self._selected_id is None:
+            messagebox.showinfo("freewispr", "Select a meeting first.")
+            return
+        segs = db.get_segments(self._selected_id)
+        if not segs:
+            messagebox.showinfo("freewispr", "No transcript to export.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt")],
+            initialfile="meeting_transcript.txt",
+        )
+        if path:
+            from meeting import _fmt
+            with open(path, "w", encoding="utf-8") as f:
+                for s in segs:
+                    f.write(f"[{_fmt(s['start_sec'])}] {s['text']}\n")
+            messagebox.showinfo("freewispr", f"Saved to {path}")
+
+    def _delete(self):
+        if self._selected_id is None:
+            messagebox.showinfo("freewispr", "Select a meeting first.")
+            return
+        if not messagebox.askyesno("freewispr", "Delete this meeting transcript?"):
+            return
+        db.delete_meeting(self._selected_id)
+        self._selected_id = None
+        self._transcript.configure(state="normal")
+        self._transcript.delete("1.0", "end")
+        self._transcript.configure(state="disabled")
+        self._meta_var.set("Select a meeting to view its transcript")
+        self._load_meetings()
+
+
 # --------------------------------------------------------------------------- #
 
 class SettingsWindow:
