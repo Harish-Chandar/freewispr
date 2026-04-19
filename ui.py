@@ -1,6 +1,9 @@
 """Tkinter windows used by freewispr."""
+import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
 
 import snippets as snippet_module
 import corrections as corr_module
@@ -13,6 +16,67 @@ ACC2 = "#5a3fd4"
 FG = "#e8e8e8"
 FG2 = "#888"
 FONT = ("Segoe UI", 10)
+
+
+def _find_app_icon_paths() -> tuple[Path | None, Path | None]:
+    """Locate PNG/ICO icon assets in source and PyInstaller layouts."""
+    roots = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass) / "assets")
+
+    roots.extend([
+        Path(sys.executable).resolve().parent / "assets",
+        Path.cwd() / "assets",
+        Path(__file__).resolve().parent / "assets",
+    ])
+
+    png_path = None
+    ico_path = None
+    for root in roots:
+        p = root / "icon.png"
+        if png_path is None and p.exists():
+            png_path = p
+        i = root / "icon.ico"
+        if ico_path is None and i.exists():
+            ico_path = i
+
+    return png_path, ico_path
+
+
+def _apply_window_icon(window: tk.Misc):
+    """Apply the app icon to a Tk/Toplevel window when available."""
+    png_path, ico_path = _find_app_icon_paths()
+    if not png_path and not ico_path:
+        return
+
+    applied = False
+    if png_path:
+        try:
+            tk_img = tk.PhotoImage(file=str(png_path))
+            window.iconphoto(True, tk_img)
+            window._freewispr_icon_photo = tk_img
+            applied = True
+        except Exception:
+            pass
+
+    if not applied and ico_path:
+        try:
+            window.iconbitmap(str(ico_path))
+            applied = True
+        except Exception:
+            pass
+
+    # Tk on Windows can fail to decode some modern ICO variants; use iconphoto fallback.
+    if not applied and ico_path:
+        try:
+            pil_img = Image.open(ico_path)
+            tk_img = ImageTk.PhotoImage(pil_img)
+            window.iconphoto(True, tk_img)
+            window._freewispr_icon_photo = tk_img
+        except Exception:
+            pass
 
 
 def _style(root):
@@ -124,6 +188,7 @@ class _PairDialog(tk.Toplevel):
     def __init__(self, parent, title, key_label, val_label,
                  key="", val="", on_save=None):
         super().__init__(parent)
+        _apply_window_icon(self)
         self.title(title)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -173,6 +238,7 @@ class SnippetsWindow:
 
     def __init__(self):
         self.root = tk.Toplevel()
+        _apply_window_icon(self.root)
         self.root.title("freewispr — Snippets")
         self.root.geometry("640x420")
         self.root.configure(bg=BG)
@@ -275,6 +341,7 @@ class DictionaryWindow:
 
     def __init__(self):
         self.root = tk.Toplevel()
+        _apply_window_icon(self.root)
         self.root.title("freewispr — Personal Dictionary")
         self.root.geometry("580x400")
         self.root.configure(bg=BG)
@@ -377,6 +444,7 @@ class SettingsWindow:
         self.on_save = on_save
 
         self.root = tk.Toplevel()
+        _apply_window_icon(self.root)
         self.root.title("freewispr — Settings")
         self.root.geometry("440x400")
         self.root.resizable(False, False)

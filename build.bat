@@ -44,6 +44,8 @@ echo Building exe...
   --windowed ^
   --name freewispr ^
   --icon "assets/icon.ico" ^
+  --add-data "assets/icon.png;assets" ^
+  --add-data "assets/icon.ico;assets" ^
   --collect-all=faster_whisper ^
   --hidden-import=faster_whisper ^
   --hidden-import=sounddevice ^

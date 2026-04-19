@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
 from typing import Any
 
@@ -13,7 +14,7 @@ import pystray
 import config as cfg_module
 from transcriber import Transcriber
 from dictation import DictationMode
-from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
+from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style, _apply_window_icon
 from error_log import log_error
 
 _config: dict = {}
@@ -26,11 +27,36 @@ _indicator: FloatingIndicator | None = None
 _settings_window: SettingsWindow | None = None
 
 
+def _set_windows_appusermodel_id():
+    """Set explicit Windows AppUserModelID for taskbar/window icon consistency."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("freewispr.app")
+    except Exception as e:
+        log_error("windows.appusermodel", e)
+
+
 def _make_icon() -> Image.Image:
+    # Prefer the generated icon asset when available.
+    icon_candidates = [
+        Path.cwd() / "assets" / "icon.ico",
+        Path(__file__).resolve().parent / "assets" / "icon.ico",
+    ]
+    for icon_path in icon_candidates:
+        if icon_path.exists():
+            try:
+                return Image.open(icon_path).convert("RGBA")
+            except Exception:
+                pass
+
+    # Fallback glyph (from source repo) if the icon file is missing or unreadable.
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Simple mic icon for the tray.
+    # Simple mic fallback for the tray.
     draw.ellipse([4, 4, size - 4, size - 4], fill="#7c5cfc")
     cx = size // 2
     draw.rounded_rectangle([cx - 9, 12, cx + 9, 36], radius=9, fill="white")
@@ -281,8 +307,10 @@ def main():
     global _tray_icon, _tk_root, _status_var, _indicator
 
     _configure_global_error_logging()
+    _set_windows_appusermodel_id()
 
     _tk_root = tk.Tk()
+    _apply_window_icon(_tk_root)
     _tk_root.withdraw()
     _style(_tk_root)
 
