@@ -209,7 +209,7 @@ freewispr/
 Contributions welcome. Please open an issue first for larger changes.
 
 ```bash
-git clone https://github.com/x26prakhar/freewispr.git
+git clone https://github.com/harish-chandar/freewispr.git
 cd freewispr
 pip install -r requirements.txt
 python main.py   # run directly from source
@@ -219,6 +219,7 @@ python main.py   # run directly from source
 
 ## Acknowledgements
 
+- [Original Repository](https://github.com/x26prakhar/freewispr)
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — efficient Whisper inference via CTranslate2
 - [OpenAI Whisper](https://github.com/openai/whisper) — the original speech recognition model
 - [sounddevice](https://python-sounddevice.readthedocs.io/) — PortAudio bindings for Python

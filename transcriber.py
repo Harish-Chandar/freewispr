@@ -7,7 +7,6 @@ import corrections as corr_module
 
 MODEL_DIR = Path.home() / ".freewispr" / "models"
 
-# Common filler words / phrases to strip when filter_fillers=True
 _FILLERS = re.compile(
     r'\b(um+|uh+|er+|ah+|hmm+|mhm|you know|i mean|'
     r'so um|so uh|well uh|basically|literally|right\?|okay so|'
@@ -17,7 +16,7 @@ _FILLERS = re.compile(
 
 
 def _punctuate(text: str) -> str:
-    """Capitalize first letter and ensure terminal punctuation."""
+    """Capitalize the first letter and add terminal punctuation."""
     if not text:
         return text
     text = text[0].upper() + text[1:]

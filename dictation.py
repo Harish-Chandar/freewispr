@@ -6,19 +6,21 @@ from audio import MicRecorder
 from transcriber import Transcriber
 from paste import paste_text
 import snippets as snippet_module
+from error_log import log_error
 
 MIN_AUDIO_SAMPLES = 3200  # 0.2 s at 16 kHz — ignore accidental taps
 
 
 class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
-                 on_status=None, indicator=None, on_mic_error=None):
+                 on_status=None, indicator=None, on_mic_error=None, on_transcribe_error=None):
         self.transcriber = transcriber
         self.hotkey = hotkey
         self.recorder = MicRecorder()
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self.on_mic_error = on_mic_error or (lambda msg: None)
+        self.on_transcribe_error = on_transcribe_error or (lambda msg: None)
         self._active = False
         self._recording = False
 
@@ -30,8 +32,6 @@ class DictationMode:
             self._trigger_key = self.hotkey
             self._modifier = None
 
-    # ------------------------------------------------------------------ public
-
     def start(self):
         self._active = True
         keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False)
@@ -42,10 +42,8 @@ class DictationMode:
         self._active = False
         try:
             keyboard.unhook_all()
-        except Exception:
-            pass
-
-    # ----------------------------------------------------------------- private
+        except Exception as e:
+            log_error("dictation.unhook", e)
 
     def _modifier_held(self) -> bool:
         if not self._modifier:
@@ -60,6 +58,7 @@ class DictationMode:
             except Exception as e:
                 self._recording = False
                 print(f"Mic start error: {e}", flush=True)
+                log_error("dictation.mic_start", e)
                 self.on_status("Mic unavailable — check input device/permissions")
                 self.on_mic_error(str(e))
                 if self.indicator:
@@ -75,9 +74,10 @@ class DictationMode:
             self._recording = False
             audio = self.recorder.stop()
             if len(audio) < MIN_AUDIO_SAMPLES:
-                self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+                self.on_status(f"Audio too short — hold {self.hotkey.upper()} a bit longer")
                 if self.indicator:
-                    self.indicator.hide(delay_ms=0)
+                    self.indicator.show("Too short", state="error")
+                    self.indicator.hide(delay_ms=1200)
                 return
             self.on_status("Transcribing…")
             if self.indicator:
@@ -88,21 +88,47 @@ class DictationMode:
         print("Transcribing...", flush=True)
         try:
             text = self.transcriber.transcribe(audio)
-            # Apply snippet expansion — if full text is a trigger, replace it
-            text = snippet_module.expand(text)
-            print(f"Result: '{text}'", flush=True)
-            if text.strip():
-                paste_text(text)
-                self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
-                if self.indicator:
-                    self.indicator.show("Pasted ✓", state="done")
-                    self.indicator.hide(delay_ms=1800)
-            else:
-                self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
-                if self.indicator:
-                    self.indicator.hide(delay_ms=0)
         except Exception as e:
             print(f"Transcribe error: {e}", flush=True)
-            self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+            log_error("dictation.transcribe", e)
+            self.on_status("Transcription failed — check error dialog")
+            self.on_transcribe_error(f"Transcribe stage failed: {e}")
+            if self.indicator:
+                self.indicator.show("Transcription failed", state="error")
+                self.indicator.hide(delay_ms=1800)
+            return
+
+        try:
+            text = snippet_module.expand(text)
+            print(f"Result: '{text}'", flush=True)
+        except Exception as e:
+            print(f"Post-process error: {e}", flush=True)
+            log_error("dictation.post_process", e)
+            self.on_status("Text processing failed — check error dialog")
+            self.on_transcribe_error(f"Post-process stage failed: {e}")
+            if self.indicator:
+                self.indicator.show("Processing failed", state="error")
+                self.indicator.hide(delay_ms=1800)
+            return
+
+        if text.strip():
+            try:
+                paste_text(text)
+            except Exception as e:
+                print(f"Paste error: {e}", flush=True)
+                log_error("dictation.paste", e)
+                self.on_status("Paste failed — check error dialog")
+                self.on_transcribe_error(f"Paste stage failed: {e}")
+                if self.indicator:
+                    self.indicator.show("Paste failed", state="error")
+                    self.indicator.hide(delay_ms=1800)
+                return
+
+            self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
+            if self.indicator:
+                self.indicator.show("Pasted ✓", state="done")
+                self.indicator.hide(delay_ms=1800)
+        else:
+            self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
             if self.indicator:
                 self.indicator.hide(delay_ms=0)

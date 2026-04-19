@@ -1,10 +1,4 @@
-"""
-Tkinter-based windows for freewispr.
-- FloatingIndicator : small always-on-top pill (recording / transcribing state)
-- SnippetsWindow    : manage trigger → expansion pairs
-- DictionaryWindow  : manage word corrections (Whisper mistakes)
-- SettingsWindow    : hotkey, model, language, filler filter, auto-punctuate
-"""
+"""Tkinter windows used by freewispr."""
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -46,10 +40,6 @@ def _style(root):
           background=[("selected", ACC)],
           foreground=[("selected", FG)])
 
-
-# --------------------------------------------------------------------------- #
-#  Floating indicator pill                                                     #
-# --------------------------------------------------------------------------- #
 
 class FloatingIndicator:
     _COLORS = {
@@ -128,12 +118,8 @@ class FloatingIndicator:
         self._blink_job = self._root.after(550, self._blink, color)
 
 
-# --------------------------------------------------------------------------- #
-#  Shared helper: entry dialog for add/edit rows                              #
-# --------------------------------------------------------------------------- #
-
 class _PairDialog(tk.Toplevel):
-    """Modal dialog with two fields: a short trigger/key and a longer value."""
+    """Modal dialog with a short key and a longer value."""
 
     def __init__(self, parent, title, key_label, val_label,
                  key="", val="", on_save=None):
@@ -182,16 +168,8 @@ class _PairDialog(tk.Toplevel):
         self.destroy()
 
 
-# --------------------------------------------------------------------------- #
-#  Snippets window                                                             #
-# --------------------------------------------------------------------------- #
-
 class SnippetsWindow:
-    """
-    Manage snippet library.
-    Say a trigger word exactly → it gets replaced with the full expansion.
-    E.g. "my address" → "123 Main St, City, State 12345"
-    """
+    """Manage snippet triggers and expansions."""
 
     def __init__(self):
         self.root = tk.Toplevel()
@@ -203,7 +181,6 @@ class SnippetsWindow:
         self._load()
 
     def _build(self):
-        # Header
         hdr = tk.Frame(self.root, bg=BG)
         hdr.pack(fill="x", padx=16, pady=(16, 4))
         ttk.Label(hdr, text="Snippets", font=("Segoe UI", 13, "bold")).pack(side="left")
@@ -214,7 +191,6 @@ class SnippetsWindow:
             style="Sub.TLabel",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
-        # Treeview
         cols = ("trigger", "expansion")
         self._tree = ttk.Treeview(self.root, columns=cols, show="headings",
                                   selectmode="browse")
@@ -227,7 +203,6 @@ class SnippetsWindow:
         sb = ttk.Scrollbar(self.root, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=sb.set)
 
-        # Buttons
         btn_row = ttk.Frame(self.root)
         btn_row.pack(fill="x", padx=16, pady=(0, 16))
         ttk.Button(btn_row, text="Add",    command=self._add).pack(side="left", padx=(0, 8))
@@ -295,16 +270,8 @@ class SnippetsWindow:
         self._load()
 
 
-# --------------------------------------------------------------------------- #
-#  Personal dictionary window                                                  #
-# --------------------------------------------------------------------------- #
-
 class DictionaryWindow:
-    """
-    Manage personal word corrections.
-    Whisper output is scanned and matching words are replaced automatically.
-    E.g. "wisp" → "freewispr",  "pra car" → "Prakhar"
-    """
+    """Manage personal word corrections."""
 
     def __init__(self):
         self.root = tk.Toplevel()
@@ -404,10 +371,6 @@ class DictionaryWindow:
         self._load()
 
 
-# --------------------------------------------------------------------------- #
-#  Settings window                                                             #
-# --------------------------------------------------------------------------- #
-
 class SettingsWindow:
     def __init__(self, config: dict, on_save=None):
         self.cfg = config.copy()
@@ -427,14 +390,12 @@ class SettingsWindow:
 
         ttk.Label(self.root, text="Settings", font=("Segoe UI", 13, "bold")).pack(anchor="w", **pad)
 
-        # Hotkey
         ttk.Label(self.root, text="Dictation hotkey").pack(anchor="w", padx=20, pady=(12, 0))
         self._hotkey_var = tk.StringVar(value=self.cfg.get("hotkey", "ctrl+space"))
         ttk.Entry(self.root, textvariable=self._hotkey_var, width=30).pack(anchor="w", **pad)
         ttk.Label(self.root, text="e.g. ctrl+space, right ctrl, F9, alt+shift",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
-        # Model size
         ttk.Label(self.root, text="Whisper model").pack(anchor="w", padx=20, pady=(8, 0))
         self._model_var = tk.StringVar(value=self.cfg.get("model_size", "base"))
         ttk.Combobox(self.root, textvariable=self._model_var,
@@ -443,14 +404,12 @@ class SettingsWindow:
         ttk.Label(self.root, text="tiny=fastest (~40MB)  base=balanced (~150MB)  small=best (~500MB)",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
-        # Language
         ttk.Label(self.root, text="Language").pack(anchor="w", padx=20, pady=(8, 0))
         self._lang_var = tk.StringVar(value=self.cfg.get("language", "en"))
         ttk.Entry(self.root, textvariable=self._lang_var, width=10).pack(anchor="w", **pad)
         ttk.Label(self.root, text="ISO 639-1 code: en, es, fr, de, hi…",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
-        # Checkboxes
         self._filler_var = tk.BooleanVar(value=self.cfg.get("filter_fillers", False))
         ttk.Checkbutton(
             self.root,

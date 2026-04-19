@@ -5,7 +5,7 @@ SAMPLE_RATE = 16000
 
 
 class MicRecorder:
-    """Records from mic while a hotkey is held."""
+    """Record microphone audio while the hotkey is held."""
 
     def __init__(self):
         self.frames = []
