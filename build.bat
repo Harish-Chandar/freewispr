@@ -27,15 +27,15 @@ if "%PYTHON_CMD%"=="" (
 echo === freewispr build ===
 echo.
 
-echo Generating icon...
-%PYTHON_CMD% make_icon.py
-if errorlevel 1 (
-  echo.
-  echo Build FAILED while generating icon.
-  popd >nul
-  pause
-  exit /b 1
-)
+@REM echo Generating icon...
+@REM %PYTHON_CMD% make_icon.py
+@REM if errorlevel 1 (
+@REM   echo.
+@REM   echo Build FAILED while generating icon.
+@REM   popd >nul
+@REM   pause
+@REM   exit /b 1
+@REM )
 
 echo.
 echo Building exe...

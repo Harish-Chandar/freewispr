@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icon.ico" width="80" height="80" alt="freewispr icon" />
+<img src="assets/icon.png" width="80" height="80" alt="freewispr icon" />
 
 # freewispr
 
@@ -10,7 +10,6 @@ Dictate anywhere. 100% on-device. No cloud. No subscription.
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square)](https://github.com/x26prakhar/freewispr/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-f59e0b?style=flat-square)](https://python.org)
-[![Latest Release](https://img.shields.io/github/v/release/x26prakhar/freewispr?style=flat-square&color=7c5cfc)](https://github.com/x26prakhar/freewispr/releases/latest)
 
 [Download](#install) · [Features](#features) · [Build from Source](#build-from-source)
 
