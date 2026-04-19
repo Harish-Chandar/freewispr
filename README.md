@@ -59,36 +59,13 @@ A **floating indicator pill** appears at the top of your screen so you always kn
 
 ---
 
-## Install
-
-### Download (recommended)
-
-Download the latest `freewispr.exe` from [**Releases**](https://github.com/x26prakhar/freewispr/releases/latest).
-
-**Requirements:** Windows 10 or Windows 11
-
-```
-1. Download freewispr.exe
-2. Double-click to run — no installer needed
-3. A purple mic icon appears in your system tray
-4. Hold Ctrl+Space and speak. Release to paste.
-```
-
-> On first launch, the Whisper `base` model (~150 MB) is downloaded automatically to `~/.freewispr/models/`. After that, the app works fully offline.
-
-### Optional: Start with Windows
-
-Right-click the tray icon → **Start with Windows** to register freewispr as a startup app. Toggle it again to remove.
-
----
-
-## Build from Source
+## Install from Source
 
 **Requirements:** Python 3.10+, Windows 10/11
 
 ```bash
 # Clone the repo
-git clone https://github.com/x26prakhar/freewispr.git
+git clone https://github.com/harish-chandar/freewispr.git
 cd freewispr
 
 # Install dependencies
@@ -102,6 +79,16 @@ build.bat
 ```
 
 The compiled executable lands at `dist/freewispr.exe`.
+
+1. Double-click to run — no installer needed
+2. A purple mic icon appears in your system tray
+3. Hold Ctrl+Space and speak. Release to paste.
+
+> On first launch, the Whisper `base` model (~150 MB) is downloaded automatically to `~/.freewispr/models/`. After that, the app works fully offline.
+
+### Optional: Start with Windows
+
+Right-click the tray icon → **Start with Windows** to register freewispr as a startup app. Toggle it again to remove.
 
 ---
 
