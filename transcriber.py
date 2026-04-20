@@ -51,6 +51,7 @@ class Transcriber:
             audio,
             language=self.language,
             beam_size=1,
+            condition_on_previous_text=False,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 300},
         )
